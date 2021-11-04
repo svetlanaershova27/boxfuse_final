@@ -1,0 +1,83 @@
+pipeline {
+
+	parameters { string(name: "Version", defaultValue: "", description: "Version of application to deploy. Format 'vX-XXX-Y'") }
+
+	options {
+		timestamps()
+		ansiColor('xterm')
+		disableConcurrentBuilds()
+	}
+
+	agent any
+
+	stages {
+		stage("Checkout playbook from Git") {
+			steps {
+				script {
+					currentBuild.displayName = "web-release-${params.Version}"
+				}
+				step([$class: 'WsCleanup'])
+				dir ("ansible") {
+					git ([branch: "master",
+						  url: "https://github.com/svetlanaershova27/boxfuse_final.git"])
+				}
+			}
+		}
+
+		stage("Node check-mode") {
+		    input {
+            				message "Checking nodes"
+            			}
+			environment {
+				SUDO_PASS = credentials('releases_sudo_pass')
+			}
+			steps {
+				echo "Deploying first node"
+				dir ("ansible") {
+					ansiblePlaybook(installation: "ansible2.8.6",
+									vaultCredentialsId: "releases_web_htr_ansible_v4_vault",
+
+									limit: "*01*",
+									playbook: "ansible.yml",
+									become: true,
+									becomeUser: "root",
+
+									extraVars: [
+									           ansible_become_pass: [value: "${SUDO_PASS}", hidden: false]
+
+									],
+									colorized: true)
+				}
+			}
+		}
+
+
+		stage("All remaining nodes deploy") {
+			input {
+				message "Confirm all remaining nodes deploy"
+				"start!"
+			}
+			environment {
+				SUDO_PASS = credentials('releases_web_htr_sudo_pass')
+			}
+			steps {
+				echo "Deploying all nodes"
+				dir ("ansible") {
+					ansiblePlaybook(installation: "ansible2.8.6",
+									vaultCredentialsId: "releases_web_htr_ansible_v4_vault",
+
+									limit: "*03*",
+									playbook: "ansible.yml",
+									become: true,
+									becomeUser: "root",
+
+									extraVars: [
+									           ansible_become_pass: [value: "${SUDO_PASS}", hidden: false]
+
+									],
+									colorized: true)
+				}
+			}
+		}
+	}
+}

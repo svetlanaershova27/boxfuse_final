@@ -1,0 +1,81 @@
+- name: Define the backend configuration for instance1
+  vars:
+
+    region: us-east-2
+    object: /myapps/hello-1.0.war.tar.gz
+    bucket: mybucket1.com
+
+  community.general.terraform:
+    project_path: 'data/terraform1/main.tf'
+    state: present
+    force_init: true
+    backend_config:
+      region: "{{ region }}"
+      bucket: "{{ bucket }}"
+
+  tasks:
+
+    - name: Ensure project is present
+      copy:
+        src: /home/boxfuse-sample-java-war-hello/
+        dest: /root
+
+    - name: Start a container with a command
+      community.docker.docker_container:
+        name: maven
+        image: maven:amazoncorretto
+        command: [ "mvn clean package" ]
+
+    - name: PUT operation
+      aws_s3:
+        bucket: "{{ bucket }}"
+        object: "{{ object }}"
+          src: /root/target/hello-1.0.war.tar.gz
+          mode: put
+    - name: Stop a container
+      community.docker.docker_container:
+        name: maven
+        state: absent
+
+- name: Define the backend configuration for instance2
+  vars:
+    region: us-east-2
+    object: /myapps/hello-1.0.war.tar.gz
+    bucket: mybucket1.com
+  community.general.terraform:
+    project_path: 'data/terraform2/second.tf'
+      state: present
+      force_init: true
+      backend_config:
+        region: "{{ region }}"
+        bucket: "{{ bucket }}"
+
+  tasks:
+    - name: Start a container with a command
+      community.docker.docker_container:
+        name: tomcat
+        image: tomcat:jre8-openjdk-slim
+        state: started
+    - name: GET operation
+      aws_s3:
+        bucket: "{{ bucket }}"
+        object: "{{ object }}"
+        dest: /var/lib/tomcat9/webapps/
+        mode: get
+      notify:
+        - restart tomcat
+    handlers:
+      - name: Restart tomcat
+        community.docker.docker_container:
+          name: tomcat
+          state: restarted
+
+- name: Terminate instance1
+  community.general.terraform:
+    project_path: 'data/terraform1/main.tf'
+    state: absent
+- name: Terminate instance2
+  community.general.terraform:
+    project_path: 'data/terraform2/second.tf'
+    state: absent
+
